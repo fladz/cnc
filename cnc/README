@@ -1,0 +1,27 @@
+
+                              ___ _ __   ___
+                             / __| '_ \ / __|
+                            | (__| | | | (__
+                             \___|_| |_|\___|
+
+README
+
+  cnc (Client Network Checker) is a tool to gather clients' network stats
+  when they are experiencing issues such as slow downloads. The information
+  this tool gathers will help us troubleshooting what is causing clients'
+  issues.
+
+INFORMATION
+
+  This tool will collect the following information of client's machine:
+    + IP/ISP
+    + OS (such as machine name, OS/kernel version)
+    + CPU (how many are installed)
+    + Memory (total, free, used for physical and virtual)
+
+TEST
+
+  This tool will run the following network tests:
+    + Ping
+    + Trace
+    + Download Speed
