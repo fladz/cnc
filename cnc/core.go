@@ -190,61 +190,67 @@ func testDownload() {
 		fmt.Printf("\nRunning download test (%s, %s)... This could take a while depends on your Internet speed, please be patient\n", src.label, src.url)
 		log.Printf("\n---- Download Test (%s, %s) ----\n", src.label, src.url)
 
-		// Init download result for this location.
-		r := DownloadJSON{Location: src.label, File: src.url}
-
-		// Set timeout so we don't wait forever
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-
-		req, err := grab.NewRequest(".", src.url)
-		if err != nil {
-			log.Printf("  ERROR: Prepping download request failed - %s\n", err)
-			continue
-		}
-		req = req.WithContext(ctx)
-
-		// Send the request and print out progress
-		res := grab.DefaultClient.Do(req)
-		defer os.Remove(res.Filename)
-
-		tick := time.NewTicker(5 * time.Second)
-		defer tick.Stop()
-
-	Loop:
-		for {
-			select {
-			case <-tick.C:
-				log.Printf("  transferred %v / %v bytes (%.2f%%)\n",
-					res.BytesComplete(), res.Size, 100*res.Progress())
-			case <-res.Done:
-				break Loop
-			}
-		}
-
-		// Final check - did everything go ok?
-		if err = res.Err(); err != nil {
-			log.Printf("  ERROR: Download failed - %s\n", err)
-			continue
-		}
-
-		if res.HTTPResponse.StatusCode != http.StatusOK {
-			log.Printf("  ERROR: Download failed - %s\n", res.HTTPResponse.Status)
-			continue
-		}
-
-		// Calculate download speed
-		// Mbps: megabits per second
-		mbps := float64((res.Size)*8/1000000) / float64(res.Duration().Seconds())
-
-		// Save calculated speed in result.
-		r.Speed = fmt.Sprintf("%.2fMbps", mbps)
-
-		log.Printf("  Download Size : %d bytes\n", res.Size)
-		log.Printf("  Download Time : %s\n", res.Duration())
-		log.Printf("  Download Speed: %s\n", r.Speed)
-
-		// Save the result in result set.
-		results.Download = append(results.Download, r)
+		runDownload(src)
 	}
+} // }}}
+
+// func runDownload {{{
+
+func runDownload(src *downloadTestSource) {
+	// Init download result for this location.
+	r := DownloadJSON{Location: src.label, File: src.url}
+
+	// Set timeout so we don't wait forever
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	req, err := grab.NewRequest(".", src.url)
+	if err != nil {
+		log.Printf("  ERROR: Prepping download request failed - %s\n", err)
+		return
+	}
+	req = req.WithContext(ctx)
+
+	// Send the request and print out progress
+	res := grab.DefaultClient.Do(req)
+	defer os.Remove(res.Filename)
+
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
+
+Loop:
+	for {
+		select {
+		case <-tick.C:
+			log.Printf("  transferred %v / %v bytes (%.2f%%)\n",
+				res.BytesComplete(), res.Size, 100*res.Progress())
+		case <-res.Done:
+			break Loop
+		}
+	}
+
+	// Final check - did everything go ok?
+	if err = res.Err(); err != nil {
+		log.Printf("  ERROR: Download failed - %s\n", err)
+		return
+	}
+
+	if res.HTTPResponse.StatusCode != http.StatusOK {
+		log.Printf("  ERROR: Download failed - %s\n", res.HTTPResponse.Status)
+		return
+	}
+
+	// Calculate download speed
+	// Mbps: megabits per second
+	mbps := float64((res.Size)*8/1000000) / float64(res.Duration().Seconds())
+
+	// Save calculated speed in result.
+	r.Speed = fmt.Sprintf("%.2fMbps", mbps)
+
+	log.Printf("  Download Size : %d bytes\n", res.Size)
+	log.Printf("  Download Time : %s\n", res.Duration())
+	log.Printf("  Download Speed: %s\n", r.Speed)
+
+	// Save the result in result set.
+	results.Download = append(results.Download, r)
 } // }}}
