@@ -1,0 +1,48 @@
+[
+	{"name": "start", "type": "string", "mode": "required"},
+	{"name": "start_unix", "type": "string", "mode": "required"},
+	{"name": "duration", "type": "string", "mode": "nullable"},
+	{"name": "ip", "type": "record", "mode": "nullable", "fields": [
+		{"name": "ip", "type": "string", "mode": "nullable"},
+		{"name": "isp", "type": "string", "mode": "nullable"},
+		{"name": "country", "type": "string", "mode": "nullable"},
+		{"name": "city", "type": "string", "mode": "nullable"}
+	]},
+	{"name": "os", "type": "record", "mode": "nullable", "fields": [
+		{"name": "name", "type": "string", "mode": "nullable"},
+		{"name": "version", "type": "string", "mode": "nullable"},
+		{"name": "kernel", "type": "string", "mode": "nullable"},
+		{"name": "model", "type": "string", "mode": "nullable"},
+		{"name": "build", "type": "string", "mode": "nullable"}
+	]},
+	{"name": "cpu", "type": "record", "mode": "nullable", "fields": [
+		{"name": "number", "type": "integer", "mode": "nullable"},
+		{"name": "speed", "type": "string", "mode": "nullable"},
+		{"name": "cpu", "type": "string", "mode": "nullable"}
+	]},
+	{"name": "memory", "type": "record", "mode": "nullable", "fields": [
+		{"name": "physical", "type": "record", "mode": "nullable", "fields": [
+			{"name": "total", "type": "integer", "mode": "nullable"},
+			{"name": "free", "type": "integer", "mode": "nullable"},
+			{"name": "used", "type": "integer", "mode": "nullable"}
+		]},
+		{"name": "virtual", "type": "record", "mode": "nullable", "fields": [
+			{"name": "total", "type": "integer", "mode": "nullable"},
+			{"name": "free", "type": "integer", "mode": "nullable"},
+			{"name": "used", "type": "integer", "mode": "nullable"}
+		]}
+	]},
+	{"name": "ping", "type": "record", "mode": "repeated", "fields": [
+		{"name": "location", "type": "string", "mode": "nullable"},
+		{"name": "output", "type": "string", "mode": "nullable"}
+	]},
+	{"name": "trace", "type": "record", "mode": "repeated", "fields": [
+		{"name": "location", "type": "string", "mode": "nullable"},
+		{"name": "output", "type": "string", "mode": "nullable"}
+	]},
+	{"name": "download", "type": "record", "mode": "repeated", "fields": [
+		{"name": "location", "type": "string", "mode": "nullable"},
+		{"name": "file", "type": "string", "mode": "nullable"},
+		{"name": "speed", "type": "string", "mode": "nullable"}
+	]}
+]

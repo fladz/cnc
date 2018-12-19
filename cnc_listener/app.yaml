@@ -1,0 +1,22 @@
+runtime: go
+service: cnc-listener
+api_version: go1
+
+env_variables:
+  # JWT used for google auth
+  jwt: "your_jwt.json"
+  # Google drive folder id
+  parent_id: "your_google_drive_id"
+  # Flag to tell if this google drive is a team drive or not.
+  is_team_drive: true
+  # Template used to transform JSON data into.
+  doc_template: "doc_template"
+
+  # Bigquery configs
+  dataset_id: "your_dataset_id"
+  table_id: "your_table_id"
+  schema_file: "your_schema.json"
+
+handlers:
+  - url: /.*
+    script: _go_app

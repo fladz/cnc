@@ -1,0 +1,43 @@
+Test started at {{.Start}}
+Elapsed Time: {{.Duration}}
+
+
+---- Client IP Info ----
+  Client IP={{.IP.IP}}, ISP={{.IP.ISP}}, CountryCode={{.IP.Country}}, City={{.IP.City}}
+
+
+---- OS Info ----
+  Name   : {{.OS.Name}}
+  Version: {{.OS.Version}}
+  Kernel : {{.OS.Kernel}}
+  Model  : {{.OS.Model}}
+  Build  : {{.OS.Build}}
+
+
+---- CPU Info ----
+  Total Number of CPU cores: {{.CPU.Number}}
+{{range .CPU.CPU}}   {{.}}
+{{end}}
+
+---- Memory Info ----
+  Physical Total: {{.Mem.Physical.Total}} MB
+  Physical Free : {{.Mem.Physical.Free}} MB
+  Physical Used : {{.Mem.Physical.Used}} MB
+  Virtual Total : {{.Mem.Virtual.Total}} MB
+  Virtual Free  : {{.Mem.Virtual.Free}} MB
+  Virtual Used  : {{.Mem.Virtual.Used}} MB
+
+{{range .Ping}}
+---- Ping ({{.Location}}) ----
+{{range .Output}}{{.}}
+{{end}}
+{{end}}
+{{range .Trace}}
+---- Traceroute ({{.Location}}) ----
+{{range .Output}}{{.}}
+{{end}}
+{{end}}
+{{range .Download}}
+---- Download Test ({{.Location}}, {{.File}}) ----
+  Download Speed: {{.Speed}}
+{{end}}
