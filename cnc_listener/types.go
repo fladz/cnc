@@ -1,5 +1,10 @@
 package main
 
+// Prefix used for generating result file.
+//
+// Result file name will be {filenamePrefix}_{unix_timestamp}
+const filenamePrefix = "cnc_result"
+
 type BigQueryJSON struct {
 	Start string `bigquery:"start"`
 	// Recommended to use string for (u)int64 values.
@@ -41,6 +46,10 @@ type MemBQJSON struct {
 }
 
 type MemBQ struct {
+	// Recommended to use string for (u)int64 values
+	//	Total string `bigquery:"total,nullable"`
+	//	Free  string `bigquery:"free,nullable"`
+	//	Used  string `biguqery:"used,nullable"`
 	Total uint64 `bigquery:"free,nullable"`
 	Free  uint64 `bigquery:"free,nullable"`
 	Used  uint64 `bigquery:"used,nullable"`

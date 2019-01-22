@@ -22,9 +22,9 @@ import (
 )
 
 var (
-	jwt, parentId, doc_template       string
-	is_team_drive                     bool
-	dataset_id, table_id, schema_file string
+	jwt, parentId, doc_template                   string
+	is_team_drive, enable_drive_subfolders, debug bool
+	dataset_id, table_id, schema_file             string
 )
 
 // func init {{{
@@ -38,11 +38,17 @@ func init() {
 	table_id = os.Getenv("table_id")
 	schema_file = os.Getenv("schema_file")
 
-	tmp := os.Getenv("is_team_drive")
-	if strings.ToLower(tmp) == "true" {
+	if strings.ToLower(os.Getenv("is_team_drive")) == "true" {
 		is_team_drive = true
 	}
+	if strings.ToLower(os.Getenv("enable_drive_subfolders")) == "true" {
+		enable_drive_subfolders = true
+	}
+	if strings.ToLower(os.Getenv("debug")) == "true" {
+		debug = true
+	}
 
+	http.HandleFunc("/tasks/subfolder/", CronFolderHandler)
 	http.HandleFunc("/", LogHandler)
 } // }}}
 
@@ -195,11 +201,36 @@ func upload(ctx context.Context, data OutputJSON) error {
 		return err
 	}
 
+	// What filename should it be?
+	filename := filenamePrefix + "_" + strconv.Itoa(int(data.StartUnix))
+
+	// If subfolder upload is enabled, check if a proper subfolder
+	// already exists.
+	var subfolderId = parentId
+	if enable_drive_subfolders {
+		subfolderName := extractSubfolderNameFromFileName(time.Now(), filename)
+		if subfolderName == "" {
+			log.Infof(ctx, "unable to determine subfolder name (%s)", filename)
+		} else {
+			log.Infof(ctx, "retrieving id for folder %s (file=%s)", subfolderName, filename)
+			fi, err := getFileFromDatastore(ctx, subfolderName)
+			if err != nil || fi.Name == "" || fi.Id == "" {
+				// Folder not found, upload to the root folder.
+				log.Infof(ctx, "unable to retrieve id for subfolder %s (name=%s, id=%s, err=%s)", subfolderName, fi.Name, fi.Id, err)
+			} else {
+				log.Infof(ctx, "retrieved id for subfolder %s (%s)", subfolderName, fi.Id)
+				subfolderId = fi.Id
+			}
+		}
+	}
+
+	log.Infof(ctx, "uploading file (%s) in folder (%s)", filename, subfolderId)
+
 	// Send the metadata and content.
 	newFile := &drive.File{
-		Name:     "cnc_result_" + strconv.Itoa(int(data.StartUnix)),
-		Parents:  []string{parentId},
-		MimeType: "application/vnd.google-apps.document",
+		Name:     filename,
+		Parents:  []string{subfolderId},
+		MimeType: driveDocMimeType,
 	}
 
 	// And set the source file's content-type ("text/csv") in Media() call.

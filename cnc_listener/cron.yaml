@@ -1,0 +1,5 @@
+cron:
+  - description: "daily subfolder job"
+    url: /tasks/subfolder/
+    schedule: every 1 hours
+    target: cnc-listener

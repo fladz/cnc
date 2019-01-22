@@ -5,10 +5,20 @@ api_version: go1
 env_variables:
   # JWT used for google auth
   jwt: "your_jwt.json"
+
+  # If "debug" is set, additional debug logs will be written.
+  debug: true
+
+  # Google Drive configs
   # Google drive folder id
   parent_id: "your_google_drive_id"
   # Flag to tell if this google drive is a team drive or not.
   is_team_drive: true
+  # Flag to specify if result should be uploaded to a subfolder within
+  # the Google Drive.
+  # When setting this, make sure to enable cronjob to generate subfolders.
+  enable_drive_subfolders: true
+
   # Template used to transform JSON data into.
   doc_template: "doc_template"
 
