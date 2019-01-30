@@ -1,12 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"cloud.google.com/go/storage"
 	"context"
+	"encoding/gob"
 	"fmt"
 	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/iterator"
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine/log"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -105,7 +110,7 @@ func CronFolderHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Create a subfolder for 2 days from now.
 	var subfolderId string
-	subfolder := time.Now().Add(24 * time.Hour).Format(timeFormat)
+	subfolder := time.Now().Add(24 * 2 * time.Hour).Format(timeFormat)
 	log.Infof(ctx, "checking subfolder existence (%s)", subfolder)
 	// Do we already have this subfolder?
 	if subfolderId = subfolders[subfolder]; subfolderId != "" {
@@ -174,6 +179,130 @@ func CronFolderHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Infof(ctx, "Finished cronjob (subfolder_created=%d, subfolder_create_failed=%d, files_moved=%d, file_move_failed=%d)",
 		subfolderCreated, subfolderCreateFailed, fileMoved, fileMoveFailed)
+} // }}}
+
+// func CronRetryHandler {{{
+
+// Cronjob to retry failed Google Drive uploads and BigQuery inserts if any.
+func CronRetryHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := appengine.NewContext(r)
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
+	// The cron request should have this header value.
+	// If it's not present, reject.
+	if r.Header.Get("X-Appengine-Cron") == "" {
+		log.Warningf(ctx, "reject invalid cron request")
+		return
+	}
+
+	// Open up cloud storage client.
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		log.Warningf(ctx, "error initializing storage client - %s", err)
+		return
+	}
+
+	// Process BQ retries.
+	log.Infof(ctx, "start processing BQ retries")
+	if err = processRetries(ctx, client.Bucket(retry_bucket_inserts), insert); err != nil {
+		log.Warningf(ctx, "(insert) %s", err)
+	}
+
+	// Process Google Drive retries.
+	log.Infof(ctx, "start processing Drive retries")
+	if err = processRetries(ctx, client.Bucket(retry_bucket_uploads), upload); err != nil {
+		log.Warningf(ctx, "(upload) %s", err)
+	}
+} // }}}
+
+// func processRetries {{{
+
+func processRetries(ctx context.Context, bucket *storage.BucketHandle, fn func(context.Context, OutputJSON) error) error {
+	// Get list of retry keys.
+	var keys []string
+	it := bucket.Objects(ctx, nil)
+	for {
+		attr, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		// Save the key in key slice.
+		keys = append(keys, attr.Name)
+	}
+	log.Infof(ctx, "retrieved %d state keys", len(keys))
+
+	if len(keys) == 0 {
+		// No retry to do.
+		log.Infof(ctx, "no retry to perform")
+		return nil
+	}
+
+	// Now get the actual values.
+	var errRetrieve, doneRetry, errRetry, doneStateRemove, errStateRemove int
+	for _, key := range keys {
+		if debug {
+			log.Infof(ctx, "DEBUG: retrieving retry value (key=%s)", key)
+		}
+		obj := bucket.Object(key)
+		r, err := obj.NewReader(ctx)
+		if err != nil {
+			if err == storage.ErrObjectNotExist {
+				// Object no longer exists
+				continue
+			}
+			log.Warningf(ctx, "error retrieving retry value (key=%s)", key)
+			errRetrieve++
+			continue
+		}
+
+		// Decode into our struct.
+		b, err := ioutil.ReadAll(r)
+		if err != nil {
+			log.Warningf(ctx, "error reading retry value (key=%s) %s", key, err)
+			errRetrieve++
+			continue
+		}
+		var data OutputJSON
+		var buf = bytes.NewBuffer(b)
+		if err = gob.NewDecoder(buf).Decode(&data); err != nil {
+			log.Warningf(ctx, "error decoding retry value (key=%s) %s", key, err)
+			errRetrieve++
+			continue
+		}
+
+		// Retry the failed operation.
+		if err = fn(ctx, data); err != nil {
+			// Failed again.
+			log.Warningf(ctx, "error retrying operation (key=%s) %s", key, err)
+			errRetry++
+			continue
+		}
+
+		log.Infof(ctx, "finished retry operation (key=%s)", key)
+		doneRetry++
+		// Operation successfully done this time, remove the state.
+		if err = obj.Delete(ctx); err != nil {
+			if err == storage.ErrObjectNotExist {
+				continue
+			}
+			log.Warningf(ctx, "error removing state (key=%s) %s", key, err)
+			errStateRemove++
+		} else {
+			// Removed state.
+			log.Infof(ctx, "removed retry state (key=%s)", key)
+			doneStateRemove++
+		}
+	}
+
+	log.Infof(ctx, "finished processing (retrieve_error=%d, retry_success=%d, retry_fail=%d, state_remove=%d, state_remove_error=%d",
+		errRetrieve, doneRetry, errRetry, doneStateRemove, errStateRemove)
+
+	return nil
 } // }}}
 
 // func createGoogleDriveSubfolder {{{

@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"cloud.google.com/go/bigquery"
+	"cloud.google.com/go/storage"
 	"context"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +27,7 @@ var (
 	jwt, parentId, doc_template                   string
 	is_team_drive, enable_drive_subfolders, debug bool
 	dataset_id, table_id, schema_file             string
+	retry_bucket_uploads, retry_bucket_inserts    string
 )
 
 // func init {{{
@@ -37,6 +40,8 @@ func init() {
 	dataset_id = os.Getenv("dataset_id")
 	table_id = os.Getenv("table_id")
 	schema_file = os.Getenv("schema_file")
+	retry_bucket_uploads = os.Getenv("retry_bucket_uploads")
+	retry_bucket_inserts = os.Getenv("retry_bucket_inserts")
 
 	if strings.ToLower(os.Getenv("is_team_drive")) == "true" {
 		is_team_drive = true
@@ -49,6 +54,7 @@ func init() {
 	}
 
 	http.HandleFunc("/tasks/subfolder/", CronFolderHandler)
+	http.HandleFunc("/tasks/retry/", CronRetryHandler)
 	http.HandleFunc("/", LogHandler)
 } // }}}
 
@@ -66,6 +72,14 @@ func LogHandler(w http.ResponseWriter, r *http.Request) {
 	// Sanity.
 	if jwt == "" || parentId == "" {
 		log.Criticalf(ctx, "not enough configuration, cannot process!")
+		return
+	}
+
+	// Another sanity.
+	// The request should only be at "/". If the request URI contains any more than
+	// that, it's an invalid request.
+	if r.RequestURI != "/" {
+		log.Infof(ctx, "reject invalid request (uri=%q)", r.RequestURI)
 		return
 	}
 
@@ -88,7 +102,14 @@ func LogHandler(w http.ResponseWriter, r *http.Request) {
 		log.Warningf(ctx, "(upload) %s", err)
 		// Even if uploading a doc fails, we still want to insert the result in bigquery,
 		// so not exiting here yet.
-		// TODO: add retry
+		//
+		// Save the failed entry in retry state.
+		if err = saveRetryState(ctx, retry_bucket_uploads, contents); err != nil {
+			// Failed saving retry state? :/
+			log.Warningf(ctx, "(upload) error saving retry state (%d) %s", contents.StartUnix, err)
+		} else {
+			log.Infof(ctx, "(upload) saved retry state (%d)", contents.StartUnix)
+		}
 	} else {
 		log.Infof(ctx, "upload complete")
 	}
@@ -96,7 +117,13 @@ func LogHandler(w http.ResponseWriter, r *http.Request) {
 	// Save the data in BigQuery.
 	if err := insert(ctx, contents); err != nil {
 		log.Warningf(ctx, "(insert) %s", err)
-		/// TODO: add retry
+		// Failed inserting, save retry state.
+		if err = saveRetryState(ctx, retry_bucket_inserts, contents); err != nil {
+			// Failed saving retry state? :/
+			log.Warningf(ctx, "(insert) error saving retry state (%d) %s", contents.StartUnix, err)
+		} else {
+			log.Infof(ctx, "(insert) saved retry state (%d)", contents.StartUnix)
+		}
 		return
 	}
 	log.Infof(ctx, "insert complete")
@@ -105,6 +132,10 @@ func LogHandler(w http.ResponseWriter, r *http.Request) {
 // func initDriveService {{{
 
 func initDriveService(ctx context.Context) (*drive.Service, error) {
+	if jwt == "" {
+		return nil, errors.New("missing jwt in configuration")
+	}
+
 	jkey, err := ioutil.ReadFile(jwt)
 	if err != nil {
 		return nil, fmt.Errorf("error reading jwt - %s", err)
@@ -118,10 +149,44 @@ func initDriveService(ctx context.Context) (*drive.Service, error) {
 	return drive.New(client)
 } // }}}
 
+// func saveRetryState {{{
+
+func saveRetryState(ctx context.Context, bucket string, data OutputJSON) error {
+	// Sanity.
+	if bucket == "" {
+		return errors.New("missing bucket configuration")
+	}
+
+	// Prep storage client.
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return fmt.Errorf("error initializing storage client: %s", err)
+	}
+
+	// Convert the struct data into bytes.
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	enc.Encode(data)
+
+	// Create an object, use unix timestamp as a key.
+	w := client.Bucket(bucket).Object(strconv.Itoa(int(data.StartUnix))).NewWriter(ctx)
+	defer w.Close()
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		return fmt.Errorf("error writing state: %s", err)
+	}
+
+	return nil
+} // }}}
+
 // func insert {{{
 
 // Insert the data into our BigQuery.
 func insert(ctx context.Context, data OutputJSON) error {
+	// Sanity
+	if dataset_id == "" || table_id == "" || schema_file == "" {
+		return errors.New("missing BigQuery configuration")
+	}
+
 	// Get project id where this GAE instance runs on.
 	projectId := os.Getenv("project_id")
 	if projectId == "" {
@@ -175,6 +240,11 @@ func insert(ctx context.Context, data OutputJSON) error {
 
 // Create a doc using received struct data, then upload to a configured drive.
 func upload(ctx context.Context, data OutputJSON) error {
+	// Sanity
+	if parentId == "" || doc_template == "" {
+		return errors.New("missing Google Drive configuration")
+	}
+
 	// Init Google Drive service.
 	srv, err := initDriveService(ctx)
 	if err != nil {

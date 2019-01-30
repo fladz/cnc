@@ -3,3 +3,9 @@ cron:
     url: /tasks/subfolder/
     schedule: every 1 hours
     target: cnc-listener
+ 
+  - description: "retry failed inserts and uploads"
+    url: /tasks/retry/
+    schedule: every 3 minutes
+    target: cnc-listener
+
